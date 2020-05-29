@@ -1,0 +1,216 @@
+/*Este programa controla un horno microondas, para su utilización, se requiere un arduino, un PCF8574, un led,un motor DC, un keypad y una pantalla LCD.
+La idea es que usted ingrese un valor de tiempo para cocinar su alimento y por medio de la tecla * le dé aceptar
+y el sistema se encargará de calentarlo y cuando este esté listo, le indicará mediante un led rojo. Si desea borrar el tiempo ingresado, sólo presiones la tecla #.
+*/
+
+
+//    AUTORES: Camilo Alvarez y Edxaidys Hernandez, Universidad EAFIT... INGENIERÍA FÍSICA 5to semestre
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <Keypad.h>
+//define los pines a controlar (motor y led)
+int controlPin = 2;
+int led = 1;
+//define las variables
+char currentTimeValue[4];
+int currentState =1; 
+int timerSeconds = 0;
+int lpcnt = 0;
+
+//define los pines y número de filass y columnas del keypad
+const byte ROWS = 4;
+const byte COLS = 3;
+char keys[ROWS][COLS] = {
+  {'1','2','3'},
+  {'4','5','6'},
+  {'7','8','9'},
+  {'*','0','#'}
+};
+byte rowPins[ROWS] = { 6, 7, 8, 9 };
+byte colPins[COLS] = { 10, 11, 12 };
+ 
+Keypad keypad = Keypad( makeKeymap(keys), rowPins, colPins, ROWS, COLS );
+
+//LCD de 20x4
+LiquidCrystal_I2C lcd(0x27, 16, 2); //Inicializa los pines de la interfaz del LCD
+
+void setup() {
+//inicia el LCD
+  lcd.begin();
+  lcd.backlight();
+
+
+ displayCodeEntryScreen();
+ 
+//define los pines que controlan el motor y el ledsito como salidas 
+ pinMode(controlPin, OUTPUT);
+ digitalWrite(controlPin, LOW);
+ pinMode(led, OUTPUT);
+ digitalWrite(led, LOW);
+
+//Toma el tiempo = 0 cuando se inicia el programa y lo mantiene así hasta que se ingrese un tiempo y se presione *
+ currentTimeValue[0] = '0';
+ currentTimeValue[1] = '0';
+ currentTimeValue[2] = '0';
+ currentTimeValue[3] = '0';
+ showEnteredTime();
+ 
+}
+
+void loop() 
+{
+ int l;
+ char tempVal[3];
+
+ char key = keypad.getKey();
+
+ if(int(key)!=0 and currentState == 1)
+ {
+
+  switch (key){
+
+  case '#':
+//Si se presiona # todo se borra
+  motorStatus(false);
+  currentTimeValue[0] = '0';
+  currentTimeValue[1] = '0';
+  currentTimeValue[2] = '0';
+  currentTimeValue[3] = '0';
+  showEnteredTime();
+  currentState = 1;
+  lpcnt = 0;
+  timerSeconds = 0;
+  break;
+
+  case '*':
+//Cuando se presiona * empieza el conteo y el sistema cambia de estado para empezar la cuenta regresiva
+  tempVal[0] = currentTimeValue[0];
+  tempVal[1] = currentTimeValue[1];
+  tempVal[2] = 0;
+
+  timerSeconds = atol(tempVal)*60;
+
+  tempVal[0] = currentTimeValue[2];
+  tempVal[1] = currentTimeValue[3];
+  tempVal[2] = 0;
+
+  timerSeconds = timerSeconds + atol(tempVal);
+  currentState = 2;
+  break;
+
+  default:
+//Permite al usuario ingresar los numeros 
+  currentTimeValue[0] =  currentTimeValue[1];
+  currentTimeValue[1] =  currentTimeValue[2];
+  currentTimeValue[2] =  currentTimeValue[3];
+  currentTimeValue[3] = key;
+  showEnteredTime();
+  break;
+  }
+}
+
+  if (currentState == 2){
+//Si se han presionado números y el símbolo numeral, entonces el sistema borra lo que tenía escrito
+    if(int(key) != 0){
+
+      if (key =='#'){
+
+        motorStatus(false);
+
+        displayCodeEntryScreen();
+        
+        currentTimeValue[0] = '0';
+        currentTimeValue[1] = '0';
+        currentTimeValue[2] = '0';
+        currentTimeValue[3] = '0';
+        showEnteredTime();
+        currentState = 1;
+        lpcnt = 0;
+        timerSeconds = 0;
+
+      }
+    } else {
+
+      if (lpcnt > 9){
+        
+        lpcnt = 0;
+        --timerSeconds;
+        showCountdown();
+
+        if (timerSeconds <= 0){
+          
+          currentState = 1;
+          motorStatus(false);
+          displayCodeEntryScreen();
+          showEnteredTime();
+        } else {
+          motorStatus(true);
+          }
+
+        }
+
+
+        ++lpcnt;
+        delay(100);
+        }
+      }
+        }
+      
+//Muestra el tiempo ingresado por el usuario 
+void showEnteredTime (){
+  
+  lcd.setCursor(11,1);
+  lcd.print(currentTimeValue[0]);   
+  lcd.print(currentTimeValue[1]); 
+  lcd.print(":");
+  lcd.print(currentTimeValue[2]);
+  lcd.print(currentTimeValue[3]);  
+  
+  }
+
+//se encarga de controlar el estado del motor
+void motorStatus (bool state){
+  
+  if (state){
+  digitalWrite(controlPin, HIGH);
+  digitalWrite(led,LOW);
+  }else{
+  digitalWrite(controlPin, LOW);
+  digitalWrite(led,HIGH);
+  }
+  }
+//realiza la cuenta regresiva del tiempo que falta para que el alimento se cocine   
+void showCountdown ()
+{
+  clearScreen();
+  char timest[6];
+  lcd.setCursor(0,0);
+  lcd.print("COCINANDO...");
+  lcd.setCursor(0,1);
+  sprintf(timest, "%d:%.2d", (timerSeconds/60), (timerSeconds - ((timerSeconds/60)*60)));
+  lcd.print(timest);
+
+ 
+  
+  
+  }
+// Pantalla principal de visualización cuando no se ha actuado sobre el sistema
+void displayCodeEntryScreen(){
+  
+  clearScreen();
+  lcd.setCursor(0,0);
+  lcd.print("Microondas");
+  lcd.setCursor(0,1);
+  lcd.print("mm:ss");
+  }
+
+//Limpia la pantalla de la LCD
+void clearScreen()
+{
+  
+  lcd.setCursor(0,0);
+  lcd.print("                ");
+  lcd.setCursor(0,1);
+  lcd.print("                ");
+
+  }
